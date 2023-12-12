@@ -1,0 +1,9 @@
+{
+    "compilerOptions": {
+      "rootDir": "src",
+      "module": "NodeNext",
+      "moduleResolution": "NodeNext",
+      "target": "ESNext",
+      "types": ["@webgpu/types", "@types/node"],
+    }
+  }
