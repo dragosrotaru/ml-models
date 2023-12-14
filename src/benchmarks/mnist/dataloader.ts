@@ -1,5 +1,3 @@
-import * as fs from "fs";
-
 export class MNISTDataloader {
   constructor(
     private trainingImagesFilepath: string,
@@ -8,21 +6,25 @@ export class MNISTDataloader {
     private testLabelsFilepath: string
   ) {}
 
-  private loadLabels(filepath: string): number[] {
-    const fileBuffer = fs.readFileSync(filepath);
-    const magic = fileBuffer.readInt32BE(0);
+  private async loadLabels(filepath: string): Promise<number[]> {
+    const fileBuffer = await Deno.readFile(filepath);
+    const view = new DataView(fileBuffer.buffer);
+
+    const magic = view.getInt32(0, false);
     if (magic !== 2049)
       throw new Error(`Magic number mismatch, expected 2049, got ${magic}`);
 
-    return Array.from(fileBuffer.slice(8));
+    return Array.from(new Uint8Array(fileBuffer.buffer, 8));
   }
 
-  private loadImages(filepath: string): number[][][] {
-    const fileBuffer = fs.readFileSync(filepath);
-    const magic = fileBuffer.readInt32BE(0);
-    const size = fileBuffer.readInt32BE(4);
-    const rows = fileBuffer.readInt32BE(8);
-    const cols = fileBuffer.readInt32BE(12);
+  private async loadImages(filepath: string): Promise<number[][][]> {
+    const fileBuffer = await Deno.readFile(filepath);
+    const view = new DataView(fileBuffer.buffer);
+
+    const magic = view.getInt32(0, false);
+    const size = view.getInt32(4, false);
+    const rows = view.getInt32(8, false);
+    const cols = view.getInt32(12, false);
 
     if (magic !== 2051)
       throw new Error(`Magic number mismatch, expected 2051, got ${magic}`);
@@ -42,23 +44,22 @@ export class MNISTDataloader {
     return images;
   }
 
-  private loadDataset(
+  private async loadDataset(
     imagesFilepath: string,
     labelsFilepath: string
   ) {
-    const labels = this.loadLabels(labelsFilepath);
-    const images = this.loadImages(imagesFilepath);
+    const labels = await this.loadLabels(labelsFilepath);
+    const images = await this.loadImages(imagesFilepath);
     return { images, labels };
   }
 
-  public loadAll() {
+  public async loadAll() {
     return {
-      train: this.loadDataset(
+      train: await this.loadDataset(
         this.trainingImagesFilepath,
         this.trainingLabelsFilepath
       ),
-      test: this.loadDataset(this.testImagesFilepath, this.testLabelsFilepath),
+      test: await this.loadDataset(this.testImagesFilepath, this.testLabelsFilepath),
     };
   }
 }
-
