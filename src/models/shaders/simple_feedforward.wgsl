@@ -27,13 +27,13 @@ fn sigmoid(x: f32) -> f32 {
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // Calculate the index of the output node being processed
     let idx = global_id.x;
-    let inputNodes = uniforms.inputNodes;
-    let outputNodes = uniforms.outputNodes;
+    let inputLength = uniforms.inputNodes;
+    let outputLength = uniforms.outputNodes;
 
     // Compute the weighted sum
     var sum: f32 = 0.0;
-    for (var i: u32 = 0u; i < inputNodes; i = i + 1u) {
-        sum = sum + inputs[i] * weights[i * outputNodes + idx];
+    for (var i: u32 = 0u; i < inputLength; i = i + 1u) {
+        sum = sum + inputs[i] * weights[i * outputLength + idx];
     }
 
     // Add the bias and apply the sigmoid function

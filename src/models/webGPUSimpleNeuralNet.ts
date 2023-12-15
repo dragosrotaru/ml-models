@@ -64,13 +64,13 @@ export class WebGPUSimpleNeuralNet implements Model {
   }
 
   private createScalarBuffer(values: number[]): GPUBuffer {
-    const array = new Float32Array(values);
+    const array = new Uint32Array(values);
     const buffer = this.device.createBuffer({
         size: array.byteLength,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         mappedAtCreation: true
     });
-    new Float32Array(buffer.getMappedRange()).set(array);
+    new Uint32Array(buffer.getMappedRange()).set(array);
     buffer.unmap();
     return buffer;
   }
@@ -131,8 +131,11 @@ export class WebGPUSimpleNeuralNet implements Model {
     });
     this.device.queue.writeBuffer(inputBuffer, 0, new Float32Array(input));
     
+    const initValue = new Float32Array(this.params.outputNodes).fill(0.5);
     const hiddenOutputBuffer = this.createBuffer(this.params.hiddenNodes);
     const finalOutputBuffer = this.createBuffer(this.params.outputNodes);
+    this.device.queue.writeBuffer(hiddenOutputBuffer, 0, initValue);
+    this.device.queue.writeBuffer(finalOutputBuffer, 0, initValue);
     
   
     // First Dispatch: Input to Hidden Layer
