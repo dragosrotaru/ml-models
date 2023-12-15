@@ -24,8 +24,9 @@ export class MNISTBenchmark {
 
   public async train(epochCount: number) {
     const { images, labels } = (await this.data).train;
+    const sample = 1000; // images.length;
     for (let epoch = 1; epoch <= epochCount; epoch++) {
-      for (let i = 0; i < 10000; i++) {
+      for (let i = 0; i < sample; i++) {
         console.log(`${i + 1} of ${images.length}`);
         const image = images[i];
         const label = labels[i];
@@ -42,9 +43,10 @@ export class MNISTBenchmark {
 
   public async test(): Promise<number> {
     const { images, labels } = (await this.data).test;
+    const sample = 100; // images.length;
     let correctCount = 0;
 
-    for (let i = 0; i < 1; i++) {
+    for (let i = 0; i < sample; i++) {
       const image = images[i];
       const label = labels[i];
 
@@ -52,11 +54,11 @@ export class MNISTBenchmark {
       const input = this.normalizeImage(image);
       const output = await this.neuralNet.feedForward(input);
       const predicted = output.indexOf(Math.max(...output));
-      console.log(predicted, label);
+      // console.log(predicted, label);
 
       if (predicted === label) correctCount++;
     }
 
-    return correctCount / 2;
+    return correctCount / sample;
   }
 }

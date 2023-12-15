@@ -132,6 +132,14 @@ export class WebGPUSimpleNeuralNet implements Model {
     return Math.ceil(nodeCount / this.WORKGROUP_SIZE);
   }
 
+  // Debug
+
+  private async popErrorScope() {
+    // pop error scope
+    const err = await this.device.popErrorScope();
+    if (err) console.error(err);
+  }
+
   // Feed Forward
 
   public async feedForward(input: number[]): Promise<number[]> {
@@ -139,7 +147,7 @@ export class WebGPUSimpleNeuralNet implements Model {
     const { output } = await this.feedForwardBuffer(input);
     const outputArrayBuffer = await this.readFromBuffer(output, this.params.outputNodes * 4);
     // pop error scope
-    console.log("errors", await this.device.popErrorScope());
+    await this.popErrorScope();
     return Array.from(outputArrayBuffer);
   }
 
@@ -153,11 +161,8 @@ export class WebGPUSimpleNeuralNet implements Model {
     });
     this.device.queue.writeBuffer(inputBuffer, 0, new Float32Array(input));
 
-    const initArray = new Float32Array(this.params.hiddenNodes).fill(0.5);
     const hiddenOutputBuffer = this.createBuffer(this.params.hiddenNodes * 4);
     const finalOutputBuffer = this.createBuffer(this.params.outputNodes * 4);
-    this.device.queue.writeBuffer(hiddenOutputBuffer, 0, initArray);
-    this.device.queue.writeBuffer(finalOutputBuffer, 0, initArray);
 
     // First Dispatch: Input to Hidden Layer
     this.feedForwardLayer(
@@ -295,7 +300,7 @@ export class WebGPUSimpleNeuralNet implements Model {
     await this.device.queue.onSubmittedWorkDone();
 
     // pop error scope
-    console.log("errors", await this.device.popErrorScope());
+    await this.popErrorScope();
   }
 
   private async backpropLayer(
