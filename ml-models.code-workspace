@@ -2,6 +2,12 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"path": "../webgpu-examples"
+		},
+		{
+			"path": "../webgpu-game-of-life"
 		}
 	],
 	"settings": {

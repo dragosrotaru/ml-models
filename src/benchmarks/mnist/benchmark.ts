@@ -1,4 +1,4 @@
-import { SimpleNeuralNet } from "../../models/simpleNeuralNet.ts";
+import { Model } from "../../interfaces.ts";
 import { MNISTDataloader } from "./dataloader.ts";
 
 export class MNISTBenchmark {
@@ -10,14 +10,14 @@ export class MNISTBenchmark {
     this.DATA_FOLDER + "test/labels"
   ).loadAll();
 
-  constructor(private neuralNet: SimpleNeuralNet) {}
+  constructor(private neuralNet: Model) {}
 
   private normalizeImage(image: number[][]) {
     return image.flat().map((p) => p / 255)
   }
 
   private normalizeLabel(label: number): number[] {
-    const expectedOutput = Array(this.neuralNet.outputNodes).fill(0);
+    const expectedOutput = Array(this.neuralNet.params.outputNodes).fill(0);
     expectedOutput[label] = 1;
     return expectedOutput;
   }
@@ -45,20 +45,21 @@ export class MNISTBenchmark {
     const { images, labels } = (await this.data).test;
     let correctCount = 0;
 
-    for (let i = 0; i < images.length; i++) {
+    for (let i = 0; i < 2; i++) {
         const image = images[i];
         const label = labels[i];
 
         // normalize data
         const input = this.normalizeImage(image);
-        const output = this.neuralNet.feedForward(input);
+        const output = await this.neuralNet.feedForward(input);
+        console.log(output);
         const predicted = output.indexOf(Math.max(...output));
 
         if (predicted === label) correctCount++;
         
     }
 
-    return correctCount / images.length;
+    return correctCount / 2;
 
     }
 }

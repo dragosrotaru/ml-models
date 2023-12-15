@@ -1,5 +1,7 @@
+import { Model } from "../interfaces.ts";
+
 /** A 3 layer neural network running sequentially on the CPU */
-export class SimpleNeuralNet {
+export class SimpleNeuralNet implements Model {
   /* Data Structures */
 
   private weightsInputHidden: number[][];
@@ -19,11 +21,14 @@ export class SimpleNeuralNet {
    * @param {number} learningRate - The learning rate to be used in training the network.
    */
   constructor(
-    public inputNodes: number,
-    public hiddenNodes: number,
-    public outputNodes: number,
-    public learningRate: number
+    public params: {
+      inputNodes: number;
+      hiddenNodes: number;
+      outputNodes: number;
+      learningRate: number;
+    }
   ) {
+    const { inputNodes, hiddenNodes, outputNodes } = params;
     this.weightsInputHidden = Array.from({ length: hiddenNodes }, () =>
       this.randomArray(inputNodes)
     );
@@ -160,7 +165,7 @@ export class SimpleNeuralNet {
     expectedOutputs: number[],
     actualOutputs: number[]
   ): number[] {
-    return expectedOutputs.map((target, i) => target - actualOutputs[i]);
+    return expectedOutputs.map((expected, i) => expected - actualOutputs[i]);
   }
 
   /**
@@ -201,7 +206,7 @@ export class SimpleNeuralNet {
     outputErrors: number[],
     weights: number[][]
   ): number[] {
-    return Array.from({ length: this.hiddenNodes }, (_, i) => {
+    return Array.from({ length: this.params.hiddenNodes }, (_, i) => {
       return outputErrors.reduce((acc, error, j) => {
         // Accumulate the weighted error from each output neuron
         return acc + error * weights[j][i];  // weight from hidden neuron i to output neuron j
@@ -268,7 +273,7 @@ export class SimpleNeuralNet {
     const outputGradients = this.calculateGradients(
       outputs,
       outputErrors,
-      this.learningRate
+      this.params.learningRate
     );
     
     const hiddenErrors = this.backpropagateErrors(
@@ -278,7 +283,7 @@ export class SimpleNeuralNet {
     const hiddenGradients = this.calculateGradients(
       hiddenOutputs,
       hiddenErrors,
-      this.learningRate
+      this.params.learningRate
     );
 
     // Adjust the Weights and biases
