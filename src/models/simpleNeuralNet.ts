@@ -29,12 +29,8 @@ export class SimpleNeuralNet implements Model {
     }
   ) {
     const { inputNodes, hiddenNodes, outputNodes } = params;
-    this.weightsInputHidden = Array.from({ length: hiddenNodes }, () =>
-      this.randomArray(inputNodes)
-    );
-    this.weightsHiddenOutput = Array.from({ length: outputNodes }, () =>
-      this.randomArray(hiddenNodes)
-    );
+    this.weightsInputHidden = Array.from({ length: hiddenNodes }, () => this.randomArray(inputNodes));
+    this.weightsHiddenOutput = Array.from({ length: outputNodes }, () => this.randomArray(hiddenNodes));
     this.biasHidden = this.randomArray(hiddenNodes);
     this.biasOutput = this.randomArray(outputNodes);
   }
@@ -93,14 +89,8 @@ export class SimpleNeuralNet implements Model {
    * @param {number} bias - Bias term to be added to the weighted sum.
    * @returns {number} The computed weighted sum.
    */
-  private weightedSum(
-    inputs: number[],
-    weights: number[],
-    bias: number
-  ): number {
-    return (
-      inputs.reduce((acc, input, idx) => acc + input * weights[idx], 0) + bias
-    );
+  private weightedSum(inputs: number[], weights: number[], bias: number): number {
+    return inputs.reduce((acc, input, idx) => acc + input * weights[idx], 0) + bias;
   }
 
   /**
@@ -115,14 +105,8 @@ export class SimpleNeuralNet implements Model {
    * @param {number[]} biases - Array of bias values for each neuron in the layer.
    * @returns {number[]} The output of the layer after applying the weighted sum and sigmoid activation for each neuron.
    */
-  private processLayer(
-    inputs: number[],
-    weights: number[][],
-    biases: number[]
-  ): number[] {
-    return weights.map((weightRow, i) =>
-      this.sigmoid(this.weightedSum(inputs, weightRow, biases[i]))
-    );
+  private processLayer(inputs: number[], weights: number[][], biases: number[]): number[] {
+    return weights.map((weightRow, i) => this.sigmoid(this.weightedSum(inputs, weightRow, biases[i])));
   }
 
   /**
@@ -136,12 +120,7 @@ export class SimpleNeuralNet implements Model {
    * @param {number[]} biases - Array of biases of the current layer.
    * @param {number[]} inputs - Outputs from the previous layer, used as inputs to the current layer.
    */
-  private adjustWeightsAndBiases(
-    gradients: number[],
-    weights: number[][],
-    biases: number[],
-    inputs: number[]
-  ): void {
+  private adjustWeightsAndBiases(gradients: number[], weights: number[][], biases: number[], inputs: number[]): void {
     for (let i = 0; i < weights.length; i++) {
       for (let j = 0; j < inputs.length; j++) {
         weights[i][j] += gradients[i] * inputs[j];
@@ -161,10 +140,7 @@ export class SimpleNeuralNet implements Model {
    * @param {number[]} actualOutputs - Array of actual output values produced by the network.
    * @returns {number[]} An array representing the error for each output node.
    */
-  private calculateErrors(
-    expectedOutputs: number[],
-    actualOutputs: number[]
-  ): number[] {
+  private calculateErrors(expectedOutputs: number[], actualOutputs: number[]): number[] {
     return expectedOutputs.map((expected, i) => expected - actualOutputs[i]);
   }
 
@@ -180,14 +156,8 @@ export class SimpleNeuralNet implements Model {
    * @param {number} learningRate - The learning rate of the network.
    * @returns {number[]} An array of gradients for each output node.
    */
-  private calculateGradients(
-    outputs: number[],
-    errors: number[],
-    learningRate: number
-  ): number[] {
-    return outputs.map(
-      (output, i) => errors[i] * this.sigmoidDerivative(output) * learningRate
-    );
+  private calculateGradients(outputs: number[], errors: number[], learningRate: number): number[] {
+    return outputs.map((output, i) => errors[i] * this.sigmoidDerivative(output) * learningRate);
   }
 
   /**
@@ -202,14 +172,11 @@ export class SimpleNeuralNet implements Model {
    * @param {number[][]} weights - 2D array of weights between the hidden and output layers.
    * @returns {number[]} An array representing the propagated error for each hidden node.
    */
-  private backpropagateErrors(
-    outputErrors: number[],
-    weights: number[][]
-  ): number[] {
+  private backpropagateErrors(outputErrors: number[], weights: number[][]): number[] {
     return Array.from({ length: this.params.hiddenNodes }, (_, i) => {
       return outputErrors.reduce((acc, error, j) => {
         // Accumulate the weighted error from each output neuron
-        return acc + error * weights[j][i];  // weight from hidden neuron i to output neuron j
+        return acc + error * weights[j][i]; // weight from hidden neuron i to output neuron j
       }, 0);
     });
   }
@@ -227,16 +194,8 @@ export class SimpleNeuralNet implements Model {
    * @returns {number[]} The outputs array from the final layer of the network.
    */
   public feedForward(inputs: number[]): number[] {
-    const hidden = this.processLayer(
-      inputs,
-      this.weightsInputHidden,
-      this.biasHidden
-    );
-    const output = this.processLayer(
-      hidden,
-      this.weightsHiddenOutput,
-      this.biasOutput
-    );
+    const hidden = this.processLayer(inputs, this.weightsInputHidden, this.biasHidden);
+    const output = this.processLayer(hidden, this.weightsHiddenOutput, this.biasOutput);
     return output;
   }
 
@@ -257,47 +216,17 @@ export class SimpleNeuralNet implements Model {
    */
   public train(inputs: number[], expectedOutputs: number[]): void {
     // Feedforward the Network
-    const hiddenOutputs = this.processLayer(
-      inputs,
-      this.weightsInputHidden,
-      this.biasHidden
-    );
-    const outputs = this.processLayer(
-      hiddenOutputs,
-      this.weightsHiddenOutput,
-      this.biasOutput
-    );
+    const hiddenOutputs = this.processLayer(inputs, this.weightsInputHidden, this.biasHidden);
+    const outputs = this.processLayer(hiddenOutputs, this.weightsHiddenOutput, this.biasOutput);
 
     // Backpropagate the Errors and calculate Gradients
     const outputErrors = this.calculateErrors(expectedOutputs, outputs);
-    const outputGradients = this.calculateGradients(
-      outputs,
-      outputErrors,
-      this.params.learningRate
-    );
-    
-    const hiddenErrors = this.backpropagateErrors(
-      outputErrors,
-      this.weightsHiddenOutput
-      );
-    const hiddenGradients = this.calculateGradients(
-      hiddenOutputs,
-      hiddenErrors,
-      this.params.learningRate
-    );
 
-    // Adjust the Weights and biases
-    this.adjustWeightsAndBiases(
-      outputGradients,
-      this.weightsHiddenOutput,
-      this.biasOutput,
-      hiddenOutputs
-    );
-    this.adjustWeightsAndBiases(
-      hiddenGradients,
-      this.weightsInputHidden,
-      this.biasHidden,
-      inputs
-    );
+    const hiddenErrors = this.backpropagateErrors(outputErrors, this.weightsHiddenOutput);
+    const hiddenGradients = this.calculateGradients(hiddenOutputs, hiddenErrors, this.params.learningRate);
+    this.adjustWeightsAndBiases(hiddenGradients, this.weightsInputHidden, this.biasHidden, inputs);
+
+    const outputGradients = this.calculateGradients(outputs, outputErrors, this.params.learningRate);
+    this.adjustWeightsAndBiases(outputGradients, this.weightsHiddenOutput, this.biasOutput, hiddenOutputs);
   }
 }

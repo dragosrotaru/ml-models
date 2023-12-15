@@ -1,6 +1,5 @@
 import * as shaders from "./shaders/index.ts";
-import { Model } from "../interfaces.ts"
-
+import { Model } from "../interfaces.ts";
 
 export class WebGPUSimpleNeuralNet implements Model {
   private weightsInputHiddenBuffer: GPUBuffer;
@@ -29,14 +28,23 @@ export class WebGPUSimpleNeuralNet implements Model {
     this.biasHiddenBuffer = this.createRandomBuffer("biasHidden", params.hiddenNodes);
     this.biasOutputBuffer = this.createRandomBuffer("biasOutput", params.outputNodes);
     this.scalarBuffer = this.createScalarBuffer([params.inputNodes, params.outputNodes]);
-    this.device.pushErrorScope('validation');
+  }
+
+  static async create(params: { inputNodes: number; hiddenNodes: number; outputNodes: number; learningRate: number }) {
+    const adapter = await navigator.gpu.requestAdapter({
+      powerPreference: "high-performance",
+    });
+    const device = await adapter?.requestDevice();
+    if (!device) throw new Error("no suitable adapter found");
+    device.lost.then((e) => console.error(e));
+    return new WebGPUSimpleNeuralNet(device, params);
   }
 
   // Buffer Creation
 
-  private createBuffer(nodeCount: number): GPUBuffer {
+  private createBuffer(size: number): GPUBuffer {
     return this.device.createBuffer({
-      size: nodeCount * 4, // Assuming each node's output is a single float
+      size, // Assuming each node's output is a single float
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
   }
@@ -51,7 +59,7 @@ export class WebGPUSimpleNeuralNet implements Model {
       label,
       size: array.byteLength,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-      mappedAtCreation: true
+      mappedAtCreation: true,
     });
     new Float32Array(buffer.getMappedRange()).set(array);
     buffer.unmap();
@@ -66,9 +74,9 @@ export class WebGPUSimpleNeuralNet implements Model {
   private createScalarBuffer(values: number[]): GPUBuffer {
     const array = new Uint32Array(values);
     const buffer = this.device.createBuffer({
-        size: array.byteLength,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        mappedAtCreation: true
+      size: array.byteLength,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
     });
     new Uint32Array(buffer.getMappedRange()).set(array);
     buffer.unmap();
@@ -101,77 +109,103 @@ export class WebGPUSimpleNeuralNet implements Model {
       size: size,
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
     });
-  
+
     // Encode commands for copying buffer to the readable buffer
     const commandEncoder = this.device.createCommandEncoder();
     commandEncoder.copyBufferToBuffer(buffer, 0, readBuffer, 0, size);
     this.device.queue.submit([commandEncoder.finish()]);
-  
+
     // Wait for the GPU to finish executing before reading back the data
     await readBuffer.mapAsync(GPUMapMode.READ);
     const copyArrayBuffer = readBuffer.getMappedRange();
-  
+
     // Copy data into a Float32Array and return it
     const data = Array.from(new Float32Array(copyArrayBuffer));
     readBuffer.unmap();
     return data;
   }
 
+  // Workgroup Size
 
-  
-  public train(input: number[], output: number[]): void | Promise<void> {
-    throw new Error("Method not implemented.");
+  private WORKGROUP_SIZE = 64;
+  private getWorkgroupCount(nodeCount: number) {
+    return Math.ceil(nodeCount / this.WORKGROUP_SIZE);
   }
 
+  // Feed Forward
+
   public async feedForward(input: number[]): Promise<number[]> {
+    this.device.pushErrorScope("validation");
+    const { output } = await this.feedForwardBuffer(input);
+    const outputArrayBuffer = await this.readFromBuffer(output, this.params.outputNodes * 4);
+    // pop error scope
+    console.log("errors", await this.device.popErrorScope());
+    return Array.from(outputArrayBuffer);
+  }
+
+  private async feedForwardBuffer(
+    input: number[]
+  ): Promise<{ input: GPUBuffer; hidden: GPUBuffer; output: GPUBuffer }> {
     const inputBuffer = this.device.createBuffer({
       label: "input buffer",
       size: input.length * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(inputBuffer, 0, new Float32Array(input));
-    
-    const initValue = new Float32Array(this.params.outputNodes).fill(0.5);
-    const hiddenOutputBuffer = this.createBuffer(this.params.hiddenNodes);
-    const finalOutputBuffer = this.createBuffer(this.params.outputNodes);
-    this.device.queue.writeBuffer(hiddenOutputBuffer, 0, initValue);
-    this.device.queue.writeBuffer(finalOutputBuffer, 0, initValue);
-    
-  
+
+    const initArray = new Float32Array(this.params.hiddenNodes).fill(0.5);
+    const hiddenOutputBuffer = this.createBuffer(this.params.hiddenNodes * 4);
+    const finalOutputBuffer = this.createBuffer(this.params.outputNodes * 4);
+    this.device.queue.writeBuffer(hiddenOutputBuffer, 0, initArray);
+    this.device.queue.writeBuffer(finalOutputBuffer, 0, initArray);
+
     // First Dispatch: Input to Hidden Layer
-    this.dispatch(
-      inputBuffer, 
+    this.feedForwardLayer(
+      inputBuffer,
       this.weightsInputHiddenBuffer,
       this.biasHiddenBuffer,
       hiddenOutputBuffer,
-      Math.ceil(this.params.hiddenNodes / 64)
-      );
-  
+      this.getWorkgroupCount(this.params.hiddenNodes)
+    );
+
     // Second Dispatch: Hidden Layer to Output Layer
-    this.dispatch(
+    this.feedForwardLayer(
       hiddenOutputBuffer,
       this.weightsHiddenOutputBuffer,
       this.biasOutputBuffer,
       finalOutputBuffer,
-      Math.ceil(this.params.outputNodes / 64)
-      );
-  
-      await this.device.queue.onSubmittedWorkDone();
-      const outputArrayBuffer = await this.readFromBuffer(finalOutputBuffer, this.params.outputNodes * 4);
-      return Array.from(outputArrayBuffer);
-  }
-  
+      this.getWorkgroupCount(this.params.outputNodes)
+    );
 
-  private dispatch(inputBuffer: GPUBuffer, weightBuffer: GPUBuffer, biasBuffer: GPUBuffer, outputBuffer: GPUBuffer, workgroupCount: number) {
+    await this.device.queue.onSubmittedWorkDone();
+    return {
+      input: inputBuffer,
+      hidden: hiddenOutputBuffer,
+      output: finalOutputBuffer,
+    };
+  }
+
+  private feedForwardLayer(
+    inputBuffer: GPUBuffer,
+    weightBuffer: GPUBuffer,
+    biasBuffer: GPUBuffer,
+    outputBuffer: GPUBuffer,
+    workgroupCount: number
+  ) {
     const { device } = this;
 
-    const bufferBindGroupLayout = device.createBindGroupLayout({
+    const bindGroupLayout = device.createBindGroupLayout({
       entries: [
-        this.bindGroupLayoutEntry(0),
+        {
+          binding: 0,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: "uniform" },
+        },
         this.bindGroupLayoutEntry(1),
         this.bindGroupLayoutEntry(2),
+        this.bindGroupLayoutEntry(3),
         {
-          binding: 3,
+          binding: 4,
           visibility: GPUShaderStage.COMPUTE,
           buffer: {
             type: "storage",
@@ -179,84 +213,161 @@ export class WebGPUSimpleNeuralNet implements Model {
         },
       ],
     });
-    const bufferbindGroup = device.createBindGroup({
+    const bindGroup = device.createBindGroup({
       label: "feedForward bind group",
-      layout: bufferBindGroupLayout,
-      entries: [
-        this.bindGroupEntry(0, inputBuffer),
-        this.bindGroupEntry(
-          1,
-          weightBuffer,
-        ),
-        this.bindGroupEntry(
-          2,
-          biasBuffer,
-        ),
-        this.bindGroupEntry(3, outputBuffer),
-      ],
-    });
-
-    const scalarBindGroupLayout = device.createBindGroupLayout({
-      entries: [
-        {
-          binding: 0,
-          visibility: GPUShaderStage.COMPUTE,
-          buffer: { type: "uniform" }
-        }
-      ],
-    });
-    const scalarBindGroup = device.createBindGroup({
-      layout: scalarBindGroupLayout,
+      layout: bindGroupLayout,
       entries: [
         {
           binding: 0,
           resource: {
             buffer: this.scalarBuffer,
           },
-        }
+        },
+        this.bindGroupEntry(1, inputBuffer),
+        this.bindGroupEntry(2, weightBuffer),
+        this.bindGroupEntry(3, biasBuffer),
+        this.bindGroupEntry(4, outputBuffer),
       ],
     });
 
     const pipeline = device.createComputePipeline({
       label: "feedForward pipeline",
       layout: device.createPipelineLayout({
-        label: "feedForward pipeline layout",
-        bindGroupLayouts: [bufferBindGroupLayout, scalarBindGroupLayout],
+        bindGroupLayouts: [bindGroupLayout],
       }),
       compute: {
         module: device.createShaderModule({
-          label: "feedForward shader",
           code: shaders.feedForward,
         }),
         entryPoint: "main",
       },
     });
-    
-    const encoder = this.device.createCommandEncoder();
+
+    const encoder = device.createCommandEncoder();
     const pass = encoder.beginComputePass();
-    
+
     pass.setPipeline(pipeline);
-    pass.setBindGroup(0, bufferbindGroup);
-    pass.setBindGroup(1, scalarBindGroup);
-    
+    pass.setBindGroup(0, bindGroup);
     pass.insertDebugMarker("dispatch");
     pass.dispatchWorkgroups(workgroupCount, workgroupCount);
     pass.end();
-    this.device.queue.submit([encoder.finish()]);
+    device.queue.submit([encoder.finish()]);
   }
 
-  static async create(params: {
-    inputNodes: number;
-    hiddenNodes: number;
-    outputNodes: number;
-    learningRate: number;
-  }) {
-    const adapter = await navigator.gpu.requestAdapter({
-      powerPreference: "high-performance",
+  // Backpropagation
+
+  public async train(input: number[], expected: number[]): Promise<void> {
+    const { input: inputBuffer, hidden, output } = await this.feedForwardBuffer(input);
+
+    this.device.pushErrorScope("validation");
+    const expectedBuffer = this.device.createBuffer({
+      label: "expected buffer",
+      size: expected.length * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    const device = await adapter?.requestDevice();
-    if (!device) throw new Error("no suitable adapter found");
-    device.lost.then((e) => console.error(e)); 
-    return new WebGPUSimpleNeuralNet(device, params);
+    this.device.queue.writeBuffer(expectedBuffer, 0, new Float32Array(expected));
+
+    // Backpropagation for Output Layer
+    const errors = await this.backpropLayer(
+      hidden,
+      output,
+      expectedBuffer,
+      this.weightsHiddenOutputBuffer,
+      this.biasOutputBuffer,
+      {
+        inputNodes: this.params.hiddenNodes,
+        nodeCount: this.params.outputNodes,
+        outputNodes: this.params.outputNodes,
+      }
+    );
+
+    // Log all buffers
+    await this.device.queue.onSubmittedWorkDone();
+
+    // Backpropagation for Hidden Layer
+    this.backpropLayer(inputBuffer, hidden, errors, this.weightsInputHiddenBuffer, this.biasHiddenBuffer, {
+      inputNodes: this.params.inputNodes,
+      nodeCount: this.params.hiddenNodes,
+      outputNodes: this.params.outputNodes,
+    });
+
+    // Synchronize after GPU operations
+    await this.device.queue.onSubmittedWorkDone();
+
+    // pop error scope
+    console.log("errors", await this.device.popErrorScope());
+  }
+
+  private async backpropLayer(
+    input: GPUBuffer,
+    output: GPUBuffer,
+    outputErrors: GPUBuffer,
+    weights: GPUBuffer,
+    biases: GPUBuffer,
+    counts: {
+      inputNodes: number;
+      nodeCount: number;
+      outputNodes: number;
+    }
+  ) {
+    // Buffers
+    const hiddenErrors = this.createBuffer(counts.nodeCount * 4);
+    const uniforms = this.createScalarBuffer([
+      counts.inputNodes,
+      counts.nodeCount,
+      counts.outputNodes,
+      this.params.learningRate,
+    ]);
+
+    // Bind Group Layout
+    const bindGroupLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+        { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+        { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+        { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+        { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+      ],
+    });
+
+    // Bind Group
+    const bindGroup = this.device.createBindGroup({
+      layout: bindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: uniforms } },
+        { binding: 1, resource: { buffer: input } },
+        { binding: 2, resource: { buffer: output } },
+        { binding: 3, resource: { buffer: outputErrors } },
+        { binding: 4, resource: { buffer: hiddenErrors } },
+        { binding: 5, resource: { buffer: weights } },
+        { binding: 6, resource: { buffer: biases } },
+      ],
+    });
+
+    // Shader Module and Pipeline
+    const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] });
+    const pipeline = this.device.createComputePipeline({
+      layout: pipelineLayout,
+      compute: {
+        module: this.device.createShaderModule({ code: shaders.backprop }),
+        entryPoint: "main",
+      },
+    });
+
+    // Dispatch
+    const commandEncoder = this.device.createCommandEncoder();
+    const pass = commandEncoder.beginComputePass();
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(this.getWorkgroupCount(counts.nodeCount), 1, 1);
+    pass.end();
+    this.device.queue.submit([commandEncoder.finish()]);
+    await this.device.queue.onSubmittedWorkDone();
+
+    //const errorResult = await this.readFromBuffer(output, this.params.outputNodes * 4);
+
+    return hiddenErrors;
   }
 }

@@ -11,8 +11,7 @@ export class MNISTDataloader {
     const view = new DataView(fileBuffer.buffer);
 
     const magic = view.getInt32(0, false);
-    if (magic !== 2049)
-      throw new Error(`Magic number mismatch, expected 2049, got ${magic}`);
+    if (magic !== 2049) throw new Error(`Magic number mismatch, expected 2049, got ${magic}`);
 
     return Array.from(new Uint8Array(fileBuffer.buffer, 8));
   }
@@ -26,8 +25,7 @@ export class MNISTDataloader {
     const rows = view.getInt32(8, false);
     const cols = view.getInt32(12, false);
 
-    if (magic !== 2051)
-      throw new Error(`Magic number mismatch, expected 2051, got ${magic}`);
+    if (magic !== 2051) throw new Error(`Magic number mismatch, expected 2051, got ${magic}`);
 
     const images: number[][][] = [];
 
@@ -44,10 +42,7 @@ export class MNISTDataloader {
     return images;
   }
 
-  private async loadDataset(
-    imagesFilepath: string,
-    labelsFilepath: string
-  ) {
+  private async loadDataset(imagesFilepath: string, labelsFilepath: string) {
     const labels = await this.loadLabels(labelsFilepath);
     const images = await this.loadImages(imagesFilepath);
     return { images, labels };
@@ -55,10 +50,7 @@ export class MNISTDataloader {
 
   public async loadAll() {
     return {
-      train: await this.loadDataset(
-        this.trainingImagesFilepath,
-        this.trainingLabelsFilepath
-      ),
+      train: await this.loadDataset(this.trainingImagesFilepath, this.trainingLabelsFilepath),
       test: await this.loadDataset(this.testImagesFilepath, this.testLabelsFilepath),
     };
   }

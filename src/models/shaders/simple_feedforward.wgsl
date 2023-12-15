@@ -9,13 +9,11 @@ struct Uniforms {
 };
 
 // Buffers for inputs, weights, biases, and outputs
-@group(0) @binding(0) var<storage, read> inputs: array<f32>;
-@group(0) @binding(1) var<storage, read> weights: array<f32>;
-@group(0) @binding(2) var<storage, read> biases: array<f32>;
-@group(0) @binding(3) var<storage, read_write> outputs: array<f32>;
-
-// Number of input and output nodes (to be set from TypeScript)
-@group(1) @binding(0) var<uniform> uniforms: Uniforms;
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(0) @binding(1) var<storage, read> inputs: array<f32>;
+@group(0) @binding(2) var<storage, read> weights: array<f32>;
+@group(0) @binding(3) var<storage, read> biases: array<f32>;
+@group(0) @binding(4) var<storage, read_write> outputs: array<f32>;
 
 // Sigmoid activation function
 fn sigmoid(x: f32) -> f32 {

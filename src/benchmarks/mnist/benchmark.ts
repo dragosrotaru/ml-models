@@ -13,7 +13,7 @@ export class MNISTBenchmark {
   constructor(private neuralNet: Model) {}
 
   private normalizeImage(image: number[][]) {
-    return image.flat().map((p) => p / 255)
+    return image.flat().map((p) => p / 255);
   }
 
   private normalizeLabel(label: number): number[] {
@@ -25,18 +25,17 @@ export class MNISTBenchmark {
   public async train(epochCount: number) {
     const { images, labels } = (await this.data).train;
     for (let epoch = 1; epoch <= epochCount; epoch++) {
-        for (let i = 0; i < images.length; i++) {
-            console.log(`${i + 1} of ${images.length}`);
-            const image = images[i];
-            const label = labels[i];
+      for (let i = 0; i < 10000; i++) {
+        console.log(`${i + 1} of ${images.length}`);
+        const image = images[i];
+        const label = labels[i];
 
-            // normalize data
-            const input = this.normalizeImage(image);
-            const output = this.normalizeLabel(label);
+        // normalize data
+        const input = this.normalizeImage(image);
+        const output = this.normalizeLabel(label);
 
-            this.neuralNet.train(input, output);
-            
-        }
+        this.neuralNet.train(input, output);
+      }
       console.log(`Epoch ${epoch} complete.`);
     }
   }
@@ -45,21 +44,19 @@ export class MNISTBenchmark {
     const { images, labels } = (await this.data).test;
     let correctCount = 0;
 
-    for (let i = 0; i < 2; i++) {
-        const image = images[i];
-        const label = labels[i];
+    for (let i = 0; i < 1; i++) {
+      const image = images[i];
+      const label = labels[i];
 
-        // normalize data
-        const input = this.normalizeImage(image);
-        const output = await this.neuralNet.feedForward(input);
-        console.log(output);
-        const predicted = output.indexOf(Math.max(...output));
+      // normalize data
+      const input = this.normalizeImage(image);
+      const output = await this.neuralNet.feedForward(input);
+      const predicted = output.indexOf(Math.max(...output));
+      console.log(predicted, label);
 
-        if (predicted === label) correctCount++;
-        
+      if (predicted === label) correctCount++;
     }
 
     return correctCount / 2;
-
-    }
+  }
 }
