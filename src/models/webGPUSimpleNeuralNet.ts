@@ -29,6 +29,7 @@ export class WebGPUSimpleNeuralNet implements Model {
     this.biasHiddenBuffer = this.createRandomBuffer("biasHidden", params.hiddenNodes);
     this.biasOutputBuffer = this.createRandomBuffer("biasOutput", params.outputNodes);
     this.scalarBuffer = this.createScalarBuffer([params.inputNodes, params.outputNodes]);
+    this.device.pushErrorScope('validation');
   }
 
   // Buffer Creation
@@ -80,7 +81,7 @@ export class WebGPUSimpleNeuralNet implements Model {
       binding: index,
       visibility: GPUShaderStage.COMPUTE,
       buffer: {
-        type: "storage",
+        type: "read-only-storage",
       },
     } as const;
   }
@@ -166,7 +167,13 @@ export class WebGPUSimpleNeuralNet implements Model {
         this.bindGroupLayoutEntry(0),
         this.bindGroupLayoutEntry(1),
         this.bindGroupLayoutEntry(2),
-        this.bindGroupLayoutEntry(3),
+        {
+          binding: 3,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: {
+            type: "storage",
+          },
+        },
       ],
     });
     const bufferbindGroup = device.createBindGroup({
@@ -192,12 +199,7 @@ export class WebGPUSimpleNeuralNet implements Model {
           binding: 0,
           visibility: GPUShaderStage.COMPUTE,
           buffer: { type: "uniform" }
-        },
-        {
-          binding: 1,
-          visibility: GPUShaderStage.COMPUTE,
-          buffer: { type: "uniform" }
-        },
+        }
       ],
     });
     const scalarBindGroup = device.createBindGroup({
@@ -208,13 +210,7 @@ export class WebGPUSimpleNeuralNet implements Model {
           resource: {
             buffer: this.scalarBuffer,
           },
-        },
-        {
-          binding: 1,
-          resource: {
-            buffer: this.scalarBuffer,
-          },
-        },
+        }
       ],
     });
 
@@ -257,6 +253,7 @@ export class WebGPUSimpleNeuralNet implements Model {
     });
     const device = await adapter?.requestDevice();
     if (!device) throw new Error("no suitable adapter found");
+    device.lost.then((e) => console.error(e)); 
     return new WebGPUSimpleNeuralNet(device, params);
   }
 }
