@@ -1,5 +1,5 @@
 // WGSL Compute Shader for Feedforward Neural Network
-const workgroupSize = 32;
+const workgroupSize = 128;
 
 // Shared memory for inputs
 @group(0) @binding(0) var<storage, read> inputs: array<f32>;

@@ -24,7 +24,7 @@ export class MNISTBenchmark {
 
   public async train(epochCount: number) {
     const { images, labels } = (await this.data).train;
-    const sample = 1000; // images.length;
+    const sample = 5000; // images.length;
     for (let epoch = 1; epoch <= epochCount; epoch++) {
       for (let i = 0; i < sample; i++) {
         console.log(`${i + 1} of ${images.length}`);
@@ -35,7 +35,7 @@ export class MNISTBenchmark {
         const input = this.normalizeImage(image);
         const output = this.normalizeLabel(label);
 
-        this.neuralNet.train(input, output);
+        await this.neuralNet.train(input, output);
       }
       console.log(`Epoch ${epoch} complete.`);
     }
