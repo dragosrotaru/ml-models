@@ -19,6 +19,7 @@ export class GPUNeuralNet implements Model {
       learningRate: number;
     }
   ) {
+    // Initializing Buffers
     this.inputBuffer = this.device.createBuffer({
       label: "input buffer",
       size: params.inputNodes * 4,
@@ -29,30 +30,33 @@ export class GPUNeuralNet implements Model {
       size: params.outputNodes * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
+
+    // Initializing Layers
+
     this.hiddenLayer = new NetworkLayer(
       device,
       {
-        inputNodes: params.inputNodes,
+        inputNodeCount: params.inputNodes,
         nodeCount: params.hiddenNodes,
-        outputNodes: params.outputNodes,
+        nextLayerNodeCount: params.outputNodes,
         learningRate: params.learningRate,
       },
       this.inputBuffer
     );
+
     this.outputLayer = new NetworkLayer(
       device,
       {
-        inputNodes: params.hiddenNodes,
+        inputNodeCount: params.hiddenNodes,
         nodeCount: params.outputNodes,
-        outputNodes: params.outputNodes,
+        nextLayerNodeCount: 0,
         learningRate: params.learningRate,
       },
-      this.hiddenLayer.state
+      this.hiddenLayer.outputs
     );
-    this.hiddenLayer.setTarget(this.outputLayer.error);
-    this.outputLayer.setTarget(this.targetBuffer);
-    this.hiddenLayer.initialize();
-    this.outputLayer.initialize();
+
+    this.hiddenLayer.bind(this.outputLayer);
+    this.outputLayer.bind(this.targetBuffer);
   }
 
   static async create(params: { inputNodes: number; hiddenNodes: number; outputNodes: number; learningRate: number }) {
@@ -95,14 +99,14 @@ export class GPUNeuralNet implements Model {
     const data = Array.from(new Float32Array(copyArrayBuffer));
     readBuffer.unmap();
     await this.device.queue.onSubmittedWorkDone();
-    this.device.popErrorScope();
+    await this.popErrorScope();
     return data;
   }
 
   // Feed Forward
   public async feedForward(input: number[]): Promise<number[]> {
     await this.feedForwardDispatch(input);
-    return this.readfromBuffer(this.outputLayer.state);
+    return this.readfromBuffer(this.outputLayer.outputs);
   }
 
   private async feedForwardDispatch(input: number[]): Promise<void> {
@@ -118,31 +122,44 @@ export class GPUNeuralNet implements Model {
 
   // Backpropagation
 
-  public async train(input: number[], expected: number[]): Promise<void> {
+  public async train(input: number[], target: number[]): Promise<void> {
+    // debug and time
+    this.device.pushErrorScope(DEBUG);
+    const start = performance.now();
+
+    // Feed Forward, clear error buffer, and write target output
     await this.feedForwardDispatch(input);
-    this.device.queue.writeBuffer(this.targetBuffer, 0, new Float32Array(expected));
+    this.device.queue.writeBuffer(this.targetBuffer, 0, new Float32Array(target));
+
     await this.device.queue.onSubmittedWorkDone();
 
-    this.device.pushErrorScope(DEBUG);
+    // log time
+    const t1 = performance.now();
 
     // Backpropagation for Output Layer
-    await this.outputLayer.clearErrorBuffer();
+    this.outputLayer.calculateErrors();
+    this.hiddenLayer.calculateErrors();
     await this.device.queue.onSubmittedWorkDone();
-    this.outputLayer.backprop();
 
-    // Log all buffers
-    await this.device.queue.onSubmittedWorkDone();
-    await this.popErrorScope();
-
-    this.device.pushErrorScope(DEBUG);
+    // log time
+    const t2 = performance.now();
 
     // Backpropagation for Hidden Layer
-    await this.hiddenLayer.clearErrorBuffer();
+    this.outputLayer.updateWeightsBiases();
+    this.hiddenLayer.updateWeightsBiases();
     await this.device.queue.onSubmittedWorkDone();
-    this.hiddenLayer.backprop();
 
-    // Synchronize after GPU operations
-    await this.device.queue.onSubmittedWorkDone();
+    // debug and log time
+    const t3 = performance.now();
+
+    const initializeTime = t1 - start;
+    const outputLayerTime = t2 - t1;
+    const hiddenLayerTime = t3 - t2;
+    const totalTime = t3 - start;
+    console.log(
+      `initialize: ${initializeTime}ms, output: ${outputLayerTime}ms, hidden: ${hiddenLayerTime}ms, total: ${totalTime}ms`
+    );
+
     await this.popErrorScope();
   }
 }

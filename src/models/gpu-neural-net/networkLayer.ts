@@ -1,49 +1,146 @@
 import * as shaders from "./shaders/index.ts";
+import { randomNumber } from "../util.ts";
 
 export class NetworkLayer {
   public weights: GPUBuffer;
-  public bias: GPUBuffer;
-  public state: GPUBuffer;
-  public error: GPUBuffer;
+  public biases: GPUBuffer;
+  public outputs: GPUBuffer;
+  public errors: GPUBuffer;
 
   private uniforms: GPUBuffer;
 
-  private ffpipeline?: GPUComputePipeline;
-  private ffbindgroup?: GPUBindGroup;
+  private bindGroupLayout: GPUBindGroupLayout;
+  private bindGroup?: GPUBindGroup;
 
-  private backpropPipeline?: GPUComputePipeline;
-  private backpropBindGroup?: GPUBindGroup;
-
-  private target?: GPUBuffer;
+  private ffpipeline: GPUComputePipeline;
+  private bpPipeline: GPUComputePipeline;
+  private updatePipeline: GPUComputePipeline;
 
   constructor(
     private device: GPUDevice,
-    private params: { inputNodes: number; nodeCount: number; outputNodes: number; learningRate: number },
-    private input: GPUBuffer
+    private params: {
+      inputNodeCount: number;
+      nodeCount: number;
+      nextLayerNodeCount: number;
+      learningRate: number;
+    },
+    private inputs: GPUBuffer
   ) {
-    this.weights = this.createRandomBuffer("weights", params.nodeCount * params.inputNodes);
-    this.bias = this.createRandomBuffer("bias", params.nodeCount);
-    this.state = this.createBuffer(params.nodeCount * 4);
-    this.error = this.createBuffer(params.nodeCount * 4);
+    // Initializing Buffers
+    this.weights = this.createRandomBuffer("weights", params.nodeCount * params.inputNodeCount);
+    this.biases = this.createRandomBuffer("bias", params.nodeCount);
+    this.outputs = this.createBuffer(params.nodeCount * 4);
+    this.errors = this.createBuffer(params.nodeCount * 4);
     this.uniforms = this.createUniformBuffer([
-      params.inputNodes,
+      params.inputNodeCount,
       params.nodeCount,
-      params.outputNodes,
       params.learningRate,
+      params.nextLayerNodeCount,
     ]);
+
+    // Initializing Pipelines
+    this.bindGroupLayout = this.device.createBindGroupLayout({
+      label: "bind group layout",
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+
+        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+        { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+
+        { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+        { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+
+        { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+        { binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+      ],
+    });
+
+    this.ffpipeline = device.createComputePipeline({
+      label: "feedForward pipeline",
+      layout: device.createPipelineLayout({
+        label: "feedForward pipeline layout",
+        bindGroupLayouts: [this.bindGroupLayout],
+      }),
+      compute: {
+        module: device.createShaderModule({
+          label: "feedForward shader",
+          code: shaders.feedForward,
+        }),
+        entryPoint: "main",
+      },
+    });
+
+    this.bpPipeline = device.createComputePipeline({
+      label: "calculate_errors pipeline",
+      layout: device.createPipelineLayout({
+        label: "calculate_errors pipeline layout",
+        bindGroupLayouts: [this.bindGroupLayout],
+      }),
+      compute: {
+        module: device.createShaderModule({
+          label: "calculate_errors shader",
+          code: shaders.calculateErrors,
+        }),
+        entryPoint: "main",
+      },
+    });
+
+    this.updatePipeline = this.device.createComputePipeline({
+      label: "update_weights_biases pipeline",
+      layout: this.device.createPipelineLayout({
+        label: "update_weights_biases pipeline layout",
+        bindGroupLayouts: [this.bindGroupLayout],
+      }),
+      compute: {
+        module: this.device.createShaderModule({
+          label: "update_weights_biases shader",
+          code: shaders.updateWeightsAndBiases,
+        }),
+        entryPoint: "main",
+      },
+    });
   }
 
-  public initialize() {
-    const feedForward = this.intializeFeedForward();
-    this.ffbindgroup = feedForward.bindGroup;
-    this.ffpipeline = feedForward.pipeline;
-    const backprop = this.intializeBackprop();
-    this.backpropBindGroup = backprop.bindGroup;
-    this.backpropPipeline = backprop.pipeline;
+  isLastLayer() {
+    return this.params.nextLayerNodeCount === 0;
   }
 
-  public setTarget(target: GPUBuffer) {
-    this.target = target;
+  public bind(to: NetworkLayer | GPUBuffer) {
+    let nextLayerWeights: GPUBuffer;
+    let targetsOrNextLayerErrors: GPUBuffer;
+
+    // binding to target layer
+    if (to instanceof GPUBuffer) {
+      if (!this.isLastLayer()) {
+        throw new Error("Cannot bind to a target buffer if this is not the last layer");
+      }
+      targetsOrNextLayerErrors = to;
+      nextLayerWeights = this.createBuffer(4);
+    } else {
+      if (this.isLastLayer()) {
+        throw new Error("Cannot bind to a layer error buffer if this is the last layer");
+      }
+      nextLayerWeights = to.weights;
+      targetsOrNextLayerErrors = to.errors;
+    }
+    this.bindGroup = this.device.createBindGroup({
+      label: "bind group",
+      layout: this.bindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.uniforms } },
+
+        { binding: 1, resource: { buffer: this.inputs } },
+        { binding: 2, resource: { buffer: this.outputs } },
+        { binding: 3, resource: { buffer: this.errors } },
+
+        { binding: 4, resource: { buffer: this.weights } },
+        { binding: 5, resource: { buffer: this.biases } },
+
+        { binding: 6, resource: { buffer: nextLayerWeights } },
+        { binding: 7, resource: { buffer: targetsOrNextLayerErrors } },
+      ],
+    });
   }
 
   // Workgroup Size
@@ -52,6 +149,8 @@ export class NetworkLayer {
   private get workgroupCount() {
     return Math.ceil(this.params.nodeCount / this.WORKGROUP_SIZE);
   }
+
+  // Buffer Creation
 
   private createBuffer(size: number): GPUBuffer {
     return this.device.createBuffer({
@@ -63,6 +162,7 @@ export class NetworkLayer {
   private createUniformBuffer(values: number[]): GPUBuffer {
     const array = new Float32Array(values);
     const buffer = this.device.createBuffer({
+      label: "uniform buffer",
       size: array.byteLength,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
       mappedAtCreation: true,
@@ -75,7 +175,7 @@ export class NetworkLayer {
   private createRandomBuffer(label: string, size: number) {
     const array = new Float32Array(size);
     for (let i = 0; i < array.length; ++i) {
-      array[i] = this.randomNumber();
+      array[i] = randomNumber();
     }
 
     const buffer = this.device.createBuffer({
@@ -89,158 +189,31 @@ export class NetworkLayer {
 
     return buffer;
   }
-  private randomNumber(): number {
-    return Math.random() * 2 - 1;
-  }
 
-  public async clearErrorBuffer() {
-    const clearArray = new Float32Array(this.params.nodeCount).fill(0);
-    this.device.queue.writeBuffer(this.error, 0, clearArray);
-  }
-
-  // Buffer Metadata
-  private bindGroupLayoutEntry(index: number) {
-    return {
-      binding: index,
-      visibility: GPUShaderStage.COMPUTE,
-      buffer: {
-        type: "storage",
-      },
-    } as const;
-  }
-
-  private bindGroupEntry(index: number, buffer: GPUBuffer) {
-    return {
-      binding: index,
-      resource: {
-        buffer,
-      },
-    } as const;
-  }
-
-  public intializeFeedForward() {
+  private pass(pipeline: GPUComputePipeline) {
+    if (!this.bindGroup) throw new Error("Bind group not initialized");
     const { device } = this;
-
-    const bindGroupLayout = device.createBindGroupLayout({
-      entries: [
-        {
-          binding: 0,
-          visibility: GPUShaderStage.COMPUTE,
-          buffer: { type: "uniform" },
-        },
-        this.bindGroupLayoutEntry(1),
-        this.bindGroupLayoutEntry(2),
-        this.bindGroupLayoutEntry(3),
-        {
-          binding: 4,
-          visibility: GPUShaderStage.COMPUTE,
-          buffer: {
-            type: "storage",
-          },
-        },
-      ],
-    });
-
-    const bindGroup = device.createBindGroup({
-      label: "feedForward bind group",
-      layout: bindGroupLayout,
-      entries: [
-        {
-          binding: 0,
-          resource: {
-            buffer: this.uniforms,
-          },
-        },
-        this.bindGroupEntry(1, this.input),
-        this.bindGroupEntry(2, this.weights),
-        this.bindGroupEntry(3, this.bias),
-        this.bindGroupEntry(4, this.state),
-      ],
-    });
-
-    const pipeline = device.createComputePipeline({
-      label: "feedForward pipeline",
-      layout: device.createPipelineLayout({
-        bindGroupLayouts: [bindGroupLayout],
-      }),
-      compute: {
-        module: device.createShaderModule({
-          code: shaders.feedForward,
-        }),
-        entryPoint: "main",
-      },
-    });
-
-    return { bindGroup, pipeline };
-  }
-
-  public intializeBackprop() {
-    if (!this.target) throw new Error("target buffer not set");
-
-    // Bind Group Layout
-    const bindGroupLayout = this.device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
-        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-        { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-        { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-        { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-        { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-      ],
-    });
-
-    // Bind Group
-    const bindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: this.uniforms } },
-        { binding: 1, resource: { buffer: this.input } },
-        { binding: 2, resource: { buffer: this.state } },
-        { binding: 4, resource: { buffer: this.target } },
-        { binding: 3, resource: { buffer: this.error } },
-        { binding: 5, resource: { buffer: this.weights } },
-        { binding: 6, resource: { buffer: this.bias } },
-      ],
-    });
-
-    // Shader Module and Pipeline
-    const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] });
-    const pipeline = this.device.createComputePipeline({
-      layout: pipelineLayout,
-      compute: {
-        module: this.device.createShaderModule({ code: shaders.backprop }),
-        entryPoint: "main",
-      },
-    });
-    return { bindGroup, pipeline };
-  }
-
-  public feedForward() {
-    const { device } = this;
-
-    if (!this.ffpipeline || !this.ffbindgroup) throw new Error("feedForward not initialized");
 
     const encoder = device.createCommandEncoder();
     const pass = encoder.beginComputePass();
 
-    pass.setPipeline(this.ffpipeline);
-    pass.setBindGroup(0, this.ffbindgroup);
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, this.bindGroup);
     pass.insertDebugMarker("dispatch");
     pass.dispatchWorkgroups(this.workgroupCount);
     pass.end();
     device.queue.submit([encoder.finish()]);
   }
 
-  public backprop() {
-    if (!this.backpropPipeline || !this.backpropBindGroup) throw new Error("backprop not initialized");
-    // Dispatch
-    const commandEncoder = this.device.createCommandEncoder();
-    const pass = commandEncoder.beginComputePass();
-    pass.setPipeline(this.backpropPipeline);
-    pass.setBindGroup(0, this.backpropBindGroup);
-    pass.dispatchWorkgroups(this.workgroupCount);
-    pass.end();
-    this.device.queue.submit([commandEncoder.finish()]);
+  public feedForward() {
+    this.pass(this.ffpipeline);
+  }
+
+  public calculateErrors() {
+    this.pass(this.bpPipeline);
+  }
+
+  public updateWeightsBiases() {
+    this.pass(this.updatePipeline);
   }
 }

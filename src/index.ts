@@ -1,5 +1,5 @@
 import { MNISTBenchmark } from "./benchmarks/mnist/benchmark.ts";
-import { SimpleNeuralNet } from "./models/simpleNeuralNet.ts";
+import { SimpleNeuralNet } from "./models/simple-neural-net/index.ts";
 import { GPUNeuralNet } from "./models/gpu-neural-net/index.ts";
 
 console.log("initializing model");
