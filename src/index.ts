@@ -13,7 +13,7 @@ const neuralNet = await GPUNeuralNet.create({
   inputNodes: 28 * 28,
   hiddenNodes: 128,
   outputNodes: 10,
-  learningRate: 0.1,
+  learningRate: 0.01,
 });
 
 console.log("loading benchmark");

@@ -19,18 +19,6 @@ export class GPUNeuralNet implements Model {
       learningRate: number;
     }
   ) {
-    this.hiddenLayer = new NetworkLayer(device, {
-      inputNodes: params.inputNodes,
-      nodeCount: params.hiddenNodes,
-      outputNodes: params.outputNodes,
-      learningRate: params.learningRate,
-    });
-    this.outputLayer = new NetworkLayer(device, {
-      inputNodes: params.hiddenNodes,
-      nodeCount: params.outputNodes,
-      outputNodes: params.outputNodes,
-      learningRate: params.learningRate,
-    });
     this.inputBuffer = this.device.createBuffer({
       label: "input buffer",
       size: params.inputNodes * 4,
@@ -41,6 +29,30 @@ export class GPUNeuralNet implements Model {
       size: params.outputNodes * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
+    this.hiddenLayer = new NetworkLayer(
+      device,
+      {
+        inputNodes: params.inputNodes,
+        nodeCount: params.hiddenNodes,
+        outputNodes: params.outputNodes,
+        learningRate: params.learningRate,
+      },
+      this.inputBuffer
+    );
+    this.outputLayer = new NetworkLayer(
+      device,
+      {
+        inputNodes: params.hiddenNodes,
+        nodeCount: params.outputNodes,
+        outputNodes: params.outputNodes,
+        learningRate: params.learningRate,
+      },
+      this.hiddenLayer.state
+    );
+    this.hiddenLayer.setTarget(this.outputLayer.error);
+    this.outputLayer.setTarget(this.targetBuffer);
+    this.hiddenLayer.initialize();
+    this.outputLayer.initialize();
   }
 
   static async create(params: { inputNodes: number; hiddenNodes: number; outputNodes: number; learningRate: number }) {
@@ -96,8 +108,10 @@ export class GPUNeuralNet implements Model {
   private async feedForwardDispatch(input: number[]): Promise<void> {
     this.device.pushErrorScope(DEBUG);
     this.device.queue.writeBuffer(this.inputBuffer, 0, new Float32Array(input));
-    this.hiddenLayer.feedForward(this.inputBuffer);
-    this.outputLayer.feedForward(this.hiddenLayer.state);
+    await this.device.queue.onSubmittedWorkDone();
+    this.hiddenLayer.feedForward();
+    await this.device.queue.onSubmittedWorkDone();
+    this.outputLayer.feedForward();
     await this.device.queue.onSubmittedWorkDone();
     await this.popErrorScope();
   }
@@ -106,25 +120,26 @@ export class GPUNeuralNet implements Model {
 
   public async train(input: number[], expected: number[]): Promise<void> {
     await this.feedForwardDispatch(input);
+    this.device.queue.writeBuffer(this.targetBuffer, 0, new Float32Array(expected));
+    await this.device.queue.onSubmittedWorkDone();
 
     this.device.pushErrorScope(DEBUG);
-    this.device.queue.writeBuffer(this.targetBuffer, 0, new Float32Array(expected));
 
     // Backpropagation for Output Layer
-    this.outputLayer.backprop(this.hiddenLayer.state, this.targetBuffer);
+    await this.outputLayer.clearErrorBuffer();
+    await this.device.queue.onSubmittedWorkDone();
+    this.outputLayer.backprop();
 
     // Log all buffers
     await this.device.queue.onSubmittedWorkDone();
     await this.popErrorScope();
 
-    // both errors, and inspect
-    /* const inspect = await this.readfromBuffer(this.outputLayer.weights);
-    console.log("Inspect:", inspect); */
-
     this.device.pushErrorScope(DEBUG);
 
     // Backpropagation for Hidden Layer
-    this.hiddenLayer.backprop(this.inputBuffer, this.outputLayer.error);
+    await this.hiddenLayer.clearErrorBuffer();
+    await this.device.queue.onSubmittedWorkDone();
+    this.hiddenLayer.backprop();
 
     // Synchronize after GPU operations
     await this.device.queue.onSubmittedWorkDone();

@@ -8,9 +8,18 @@ export class NetworkLayer {
 
   private uniforms: GPUBuffer;
 
+  private ffpipeline?: GPUComputePipeline;
+  private ffbindgroup?: GPUBindGroup;
+
+  private backpropPipeline?: GPUComputePipeline;
+  private backpropBindGroup?: GPUBindGroup;
+
+  private target?: GPUBuffer;
+
   constructor(
     private device: GPUDevice,
-    private params: { inputNodes: number; nodeCount: number; outputNodes: number; learningRate: number }
+    private params: { inputNodes: number; nodeCount: number; outputNodes: number; learningRate: number },
+    private input: GPUBuffer
   ) {
     this.weights = this.createRandomBuffer("weights", params.nodeCount * params.inputNodes);
     this.bias = this.createRandomBuffer("bias", params.nodeCount);
@@ -22,6 +31,19 @@ export class NetworkLayer {
       params.outputNodes,
       params.learningRate,
     ]);
+  }
+
+  public initialize() {
+    const feedForward = this.intializeFeedForward();
+    this.ffbindgroup = feedForward.bindGroup;
+    this.ffpipeline = feedForward.pipeline;
+    const backprop = this.intializeBackprop();
+    this.backpropBindGroup = backprop.bindGroup;
+    this.backpropPipeline = backprop.pipeline;
+  }
+
+  public setTarget(target: GPUBuffer) {
+    this.target = target;
   }
 
   // Workgroup Size
@@ -71,6 +93,11 @@ export class NetworkLayer {
     return Math.random() * 2 - 1;
   }
 
+  public async clearErrorBuffer() {
+    const clearArray = new Float32Array(this.params.nodeCount).fill(0);
+    this.device.queue.writeBuffer(this.error, 0, clearArray);
+  }
+
   // Buffer Metadata
   private bindGroupLayoutEntry(index: number) {
     return {
@@ -91,7 +118,7 @@ export class NetworkLayer {
     } as const;
   }
 
-  public feedForward(inputBuffer: GPUBuffer) {
+  public intializeFeedForward() {
     const { device } = this;
 
     const bindGroupLayout = device.createBindGroupLayout({
@@ -113,6 +140,7 @@ export class NetworkLayer {
         },
       ],
     });
+
     const bindGroup = device.createBindGroup({
       label: "feedForward bind group",
       layout: bindGroupLayout,
@@ -123,7 +151,7 @@ export class NetworkLayer {
             buffer: this.uniforms,
           },
         },
-        this.bindGroupEntry(1, inputBuffer),
+        this.bindGroupEntry(1, this.input),
         this.bindGroupEntry(2, this.weights),
         this.bindGroupEntry(3, this.bias),
         this.bindGroupEntry(4, this.state),
@@ -143,20 +171,11 @@ export class NetworkLayer {
       },
     });
 
-    const encoder = device.createCommandEncoder();
-    const pass = encoder.beginComputePass();
-
-    pass.setPipeline(pipeline);
-    pass.setBindGroup(0, bindGroup);
-    pass.insertDebugMarker("dispatch");
-    pass.dispatchWorkgroups(this.workgroupCount);
-    pass.end();
-    device.queue.submit([encoder.finish()]);
+    return { bindGroup, pipeline };
   }
 
-  public backprop(input: GPUBuffer, target: GPUBuffer) {
-    /*  const inspect = await this.readfromBuffer(uniforms);
-    console.log("Inspect:", inspect); */
+  public intializeBackprop() {
+    if (!this.target) throw new Error("target buffer not set");
 
     // Bind Group Layout
     const bindGroupLayout = this.device.createBindGroupLayout({
@@ -176,9 +195,9 @@ export class NetworkLayer {
       layout: bindGroupLayout,
       entries: [
         { binding: 0, resource: { buffer: this.uniforms } },
-        { binding: 1, resource: { buffer: input } },
+        { binding: 1, resource: { buffer: this.input } },
         { binding: 2, resource: { buffer: this.state } },
-        { binding: 4, resource: { buffer: target } },
+        { binding: 4, resource: { buffer: this.target } },
         { binding: 3, resource: { buffer: this.error } },
         { binding: 5, resource: { buffer: this.weights } },
         { binding: 6, resource: { buffer: this.bias } },
@@ -194,12 +213,32 @@ export class NetworkLayer {
         entryPoint: "main",
       },
     });
+    return { bindGroup, pipeline };
+  }
 
+  public feedForward() {
+    const { device } = this;
+
+    if (!this.ffpipeline || !this.ffbindgroup) throw new Error("feedForward not initialized");
+
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+
+    pass.setPipeline(this.ffpipeline);
+    pass.setBindGroup(0, this.ffbindgroup);
+    pass.insertDebugMarker("dispatch");
+    pass.dispatchWorkgroups(this.workgroupCount);
+    pass.end();
+    device.queue.submit([encoder.finish()]);
+  }
+
+  public backprop() {
+    if (!this.backpropPipeline || !this.backpropBindGroup) throw new Error("backprop not initialized");
     // Dispatch
     const commandEncoder = this.device.createCommandEncoder();
     const pass = commandEncoder.beginComputePass();
-    pass.setPipeline(pipeline);
-    pass.setBindGroup(0, bindGroup);
+    pass.setPipeline(this.backpropPipeline);
+    pass.setBindGroup(0, this.backpropBindGroup);
     pass.dispatchWorkgroups(this.workgroupCount);
     pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
