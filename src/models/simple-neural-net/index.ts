@@ -21,12 +21,12 @@ export class SimpleNeuralNet implements Model {
     }
   ) {
     this.hiddenLayer = new NetworkLayer({
-      inputNodes: params.inputNodes,
+      inputNodeCount: params.inputNodes,
       nodeCount: params.hiddenNodes,
       learningRate: params.learningRate,
     });
     this.outputLayer = new NetworkLayer({
-      inputNodes: params.hiddenNodes,
+      inputNodeCount: params.hiddenNodes,
       nodeCount: params.outputNodes,
       learningRate: params.learningRate,
     });

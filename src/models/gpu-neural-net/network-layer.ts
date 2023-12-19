@@ -1,13 +1,8 @@
 import * as shaders from "./shaders/index.ts";
-import { randomNumber } from "../util.ts";
+import { GPUUtil } from "./utils.ts";
 
 export class NetworkLayer {
-  public weights: GPUBuffer;
-  public biases: GPUBuffer;
-  public outputs: GPUBuffer;
-  public errors: GPUBuffer;
-
-  private uniforms: GPUBuffer;
+  private WORKGROUP_SIZE = 128;
 
   private bindGroupLayout: GPUBindGroupLayout;
   private bindGroup?: GPUBindGroup;
@@ -16,22 +11,29 @@ export class NetworkLayer {
   private bpPipeline: GPUComputePipeline;
   private updatePipeline: GPUComputePipeline;
 
+  private uniforms: GPUBuffer;
+  public weights: GPUBuffer;
+  public biases: GPUBuffer;
+  public outputs: GPUBuffer;
+  public errors: GPUBuffer;
+
   constructor(
     private device: GPUDevice,
-    private params: {
+    private util: GPUUtil,
+    public params: {
       inputNodeCount: number;
       nodeCount: number;
       nextLayerNodeCount: number;
       learningRate: number;
     },
-    private inputs: GPUBuffer
+    public inputs: GPUBuffer
   ) {
     // Initializing Buffers
-    this.weights = this.createRandomBuffer("weights", params.nodeCount * params.inputNodeCount);
-    this.biases = this.createRandomBuffer("bias", params.nodeCount);
-    this.outputs = this.createBuffer(params.nodeCount * 4);
-    this.errors = this.createBuffer(params.nodeCount * 4);
-    this.uniforms = this.createUniformBuffer([
+    this.weights = util.createRandomBuffer("weights", params.nodeCount * params.inputNodeCount);
+    this.biases = util.createRandomBuffer("bias", params.nodeCount);
+    this.outputs = util.createBuffer(params.nodeCount * 4);
+    this.errors = util.createBuffer(params.nodeCount * 4);
+    this.uniforms = util.createUniformBuffer([
       params.inputNodeCount,
       params.nodeCount,
       params.learningRate,
@@ -102,7 +104,11 @@ export class NetworkLayer {
     });
   }
 
-  isLastLayer() {
+  public get workgroupCount(): number {
+    return Math.ceil(this.params.nodeCount / this.WORKGROUP_SIZE);
+  }
+
+  public get isLastLayer(): boolean {
     return this.params.nextLayerNodeCount === 0;
   }
 
@@ -112,13 +118,13 @@ export class NetworkLayer {
 
     // binding to target layer
     if (to instanceof GPUBuffer) {
-      if (!this.isLastLayer()) {
+      if (!this.isLastLayer) {
         throw new Error("Cannot bind to a target buffer if this is not the last layer");
       }
       targetsOrNextLayerErrors = to;
-      nextLayerWeights = this.createBuffer(4);
+      nextLayerWeights = this.util.createBuffer(4);
     } else {
-      if (this.isLastLayer()) {
+      if (this.isLastLayer) {
         throw new Error("Cannot bind to a layer error buffer if this is the last layer");
       }
       nextLayerWeights = to.weights;
@@ -141,53 +147,6 @@ export class NetworkLayer {
         { binding: 7, resource: { buffer: targetsOrNextLayerErrors } },
       ],
     });
-  }
-
-  // Workgroup Size
-
-  private WORKGROUP_SIZE = 128;
-  private get workgroupCount() {
-    return Math.ceil(this.params.nodeCount / this.WORKGROUP_SIZE);
-  }
-
-  // Buffer Creation
-
-  private createBuffer(size: number): GPUBuffer {
-    return this.device.createBuffer({
-      size, // Assuming each node's output is a single float
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
-    });
-  }
-
-  private createUniformBuffer(values: number[]): GPUBuffer {
-    const array = new Float32Array(values);
-    const buffer = this.device.createBuffer({
-      label: "uniform buffer",
-      size: array.byteLength,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
-      mappedAtCreation: true,
-    });
-    new Float32Array(buffer.getMappedRange()).set(array);
-    buffer.unmap();
-    return buffer;
-  }
-
-  private createRandomBuffer(label: string, size: number) {
-    const array = new Float32Array(size);
-    for (let i = 0; i < array.length; ++i) {
-      array[i] = randomNumber();
-    }
-
-    const buffer = this.device.createBuffer({
-      label,
-      size: array.byteLength,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
-      mappedAtCreation: true,
-    });
-    new Float32Array(buffer.getMappedRange()).set(array);
-    buffer.unmap();
-
-    return buffer;
   }
 
   private pass(pipeline: GPUComputePipeline) {

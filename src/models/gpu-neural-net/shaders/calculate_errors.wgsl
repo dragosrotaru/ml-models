@@ -31,7 +31,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var error: f32 = 0.0;
     if (nextLayerNodeCount == 0u) {
         // Output layer error calculation
-        error = outputs[idx] - targetsOrNextLayerErrors[idx];
+        error = targetsOrNextLayerErrors[idx] - outputs[idx];
     } else {
         // Hidden layer error calculation
         for (var j: u32 = 0u; j < nextLayerNodeCount; j = j + 1u) {

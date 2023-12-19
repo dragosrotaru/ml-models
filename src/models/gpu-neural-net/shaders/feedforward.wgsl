@@ -38,7 +38,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // calculate the weighted sum
     var sum: f32 = 0.0;
     for (var i: u32 = 0u; i < inputNodeCount; i = i + 1u) {
-        sum = sum + inputs[i] * weights[i * nodeCount + idx];
+        sum = sum + inputs[i] * weights[idx * inputNodeCount + i];
     }
 
     // update the output: add the bias and apply the sigmoid function

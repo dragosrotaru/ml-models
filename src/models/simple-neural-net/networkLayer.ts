@@ -2,18 +2,18 @@ import { randomArray, sigmoid, sigmoidDerivative } from "../util.ts";
 
 export class NetworkLayer {
   public weights: number[][];
-  private biases: number[];
+  public biases: number[];
   public outputs: number[];
   public errors: number[];
 
   constructor(
     public params: {
-      inputNodes: number;
+      inputNodeCount: number;
       nodeCount: number;
       learningRate: number;
     }
   ) {
-    this.weights = Array.from({ length: params.nodeCount }, () => randomArray(params.inputNodes));
+    this.weights = Array.from({ length: params.nodeCount }, () => randomArray(params.inputNodeCount));
     this.biases = randomArray(params.nodeCount);
     this.outputs = [];
     this.errors = [];
@@ -25,7 +25,7 @@ export class NetworkLayer {
     );
   }
 
-  private calculateGradients(): number[] {
+  public calculateGradients(): number[] {
     return this.outputs.map((output, i) => this.errors[i] * sigmoidDerivative(output) * this.params.learningRate);
   }
 

@@ -24,7 +24,7 @@ export class MNISTBenchmark {
 
   public async train(epochCount: number) {
     const { images, labels } = (await this.data).train;
-    const sample = 60000; // images.length;
+    const sample = 2000; // images.length;
     for (let epoch = 1; epoch <= epochCount; epoch++) {
       for (let i = 0; i < sample; i++) {
         console.log(`${i + 1} of ${images.length}`);
