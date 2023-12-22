@@ -3,21 +3,6 @@
 		{
 			"path": "."
 		},
-		{
-			"path": "../webgpu-examples"
-		},
-		{
-			"path": "../webgpu-game-of-life"
-		},
-		{
-			"path": "../funsearch"
-		},
-		{
-			"path": "../pal"
-		},
-		{
-			"path": "../mamba"
-		}
 	],
 	"settings": {
 		"deno.enable": true,

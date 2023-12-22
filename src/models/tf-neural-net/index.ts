@@ -1,14 +1,16 @@
-import tf from "https://deno.land/x/tensorflow@v0.21/tf.js";
-import { Model } from "../../interfaces.ts";
+import tf from "npm:@tensorflow/tfjs";
+// import "npm:@tensorflow/tfjs-backend-webgpu";
 
-class TFNeuralNet implements Model {
+// await tf.setBackend("webgpu");
+
+export class TFNeuralNet {
+  public model: tf.Sequential;
   constructor(public params: { inputNodes: number; hiddenNodes: number; outputNodes: number; learningRate: number }) {
-    // Define the model
-    const model = tf.sequential();
+    this.model = tf.sequential();
 
     // Add layers
     // Input layer
-    model.add(
+    this.model.add(
       tf.layers.dense({
         inputShape: [params.inputNodes],
         units: params.hiddenNodes,
@@ -16,31 +18,17 @@ class TFNeuralNet implements Model {
       })
     );
     // Output layer
-    model.add(
+    this.model.add(
       tf.layers.dense({
-        units: params,
+        units: params.outputNodes,
         activation: "sigmoid", // or 'softmax' for multi-class classification
       })
     );
-    model.compile({
+
+    this.model.compile({
       optimizer: "adam",
       loss: "categoricalCrossentropy", // or 'categoricalCrossentropy' for multi-class
       metrics: ["accuracy"],
     });
   }
 }
-
-// Train the model
-async function trainModel(xTrain, yTrain) {
-  const response = await model.fit(xTrain, yTrain, {
-    epochs: numberOfEpochs,
-    validationSplit: 0.2,
-  });
-  console.log(response.history);
-}
-
-// Dummy data for demonstration (replace with real data)
-const xTrain = tf.tensor2d(/* Your training data */);
-const yTrain = tf.tensor2d(/* Your training labels */);
-
-trainModel(xTrain, yTrain);

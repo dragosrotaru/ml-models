@@ -8,7 +8,7 @@ Currently Supported:
 - WebGPU
 - Rust
 - Deno (TypeScript)
-- Tensorflow.js
+- Tensorflow.js (webgpu and cpu backend, but webgpu doesnt converge)
 
 To be Added:
 - TensorFlow
@@ -28,11 +28,6 @@ To be Added:
 Run the benchmarks using:
 
 `deno run --unstable --allow-all src/index.ts`
+
 `cargo run --release`
 
-### Todo
-
-- implement using other frameworks/languages
-- compile rust to WASM
-- implement a more robust benchmarking / debugging harness
-- record results

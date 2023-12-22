@@ -1,6 +1,7 @@
 import { MNISTBenchmark } from "./benchmarks/mnist/benchmark.ts";
-import { SimpleNeuralNet } from "./models/simple-neural-net/index.ts";
-import { GPUNeuralNet } from "./models/gpu-neural-net/index.ts";
+// import { SimpleNeuralNet } from "./models/simple-neural-net/index.ts";
+// import { GPUNeuralNet } from "./models/gpu-neural-net/index.ts";
+import { TFNeuralNet } from "./models/tf-neural-net/index.ts";
 
 console.log("initializing model");
 /* const neuralNet = new SimpleNeuralNet({
@@ -9,7 +10,14 @@ console.log("initializing model");
   outputNodes: 10,
   learningRate: 0.1,
 }); */
-const neuralNet = await GPUNeuralNet.create({
+/* const neuralNet = await GPUNeuralNet.create({
+  inputNodes: 28 * 28,
+  hiddenNodes: 128,
+  outputNodes: 10,
+  learningRate: 0.1,
+}); */
+
+const neuralNet = new TFNeuralNet({
   inputNodes: 28 * 28,
   hiddenNodes: 128,
   outputNodes: 10,
