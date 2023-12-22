@@ -1,10 +1,38 @@
-# ml-models
+# ML Benchmarks
 
-Machine Learning implementations and experiments written in Haskell, Rust, Lean, Lisp, TypeScript on Deno/Web, WASM and WebGPU.
+This repository contains various Machine Learning models implemented using different languages, backends and optimization techniques. The purpose is to benchmark the performance characteristics of alternative technologies.
 
-## Todo
+### Technologies
 
-- fix non-converging WebGPU neural net
-- implement optimizations:
-  - batch processing
-  - efficient coalesced and transposed memory layout
+Currently Supported:
+- WebGPU
+- Rust
+- Deno (TypeScript)
+- Tensorflow.js
+
+To be Added:
+- TensorFlow
+- WASM
+- PyTorch
+- Jax
+- Haskell
+- Lisp
+
+### Models and Benchmarks
+
+- MNIST
+- Multi Layer Perceptron
+
+### Useage
+
+Run the benchmarks using:
+
+`deno run --unstable --allow-all src/index.ts`
+`cargo run --release`
+
+### Todo
+
+- implement using other frameworks/languages
+- compile rust to WASM
+- implement a more robust benchmarking / debugging harness
+- record results

@@ -14,6 +14,9 @@
 		},
 		{
 			"path": "../pal"
+		},
+		{
+			"path": "../mamba"
 		}
 	],
 	"settings": {

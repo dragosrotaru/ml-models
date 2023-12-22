@@ -24,9 +24,8 @@ export class MNISTBenchmark {
 
   public async train(epochCount: number) {
     const { images, labels } = (await this.data).train;
-    const sample = 2000; // images.length;
     for (let epoch = 1; epoch <= epochCount; epoch++) {
-      for (let i = 0; i < sample; i++) {
+      for (let i = 0; i < images.length; i++) {
         console.log(`${i + 1} of ${images.length}`);
         const image = images[i];
         const label = labels[i];
@@ -43,10 +42,9 @@ export class MNISTBenchmark {
 
   public async test(): Promise<number> {
     const { images, labels } = (await this.data).test;
-    const sample = 100; // images.length;
     let correctCount = 0;
 
-    for (let i = 0; i < sample; i++) {
+    for (let i = 0; i < images.length; i++) {
       const image = images[i];
       const label = labels[i];
 
@@ -59,6 +57,6 @@ export class MNISTBenchmark {
       if (predicted === label) correctCount++;
     }
 
-    return correctCount / sample;
+    return correctCount / images.length;
   }
 }
